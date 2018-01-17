@@ -21,6 +21,7 @@
         <module>jira</module>
         <module>salesforce</module>
         <module>servicenow</module>
+        <module>slack</module>
         <module>socialcast</module>
     </modules>
     

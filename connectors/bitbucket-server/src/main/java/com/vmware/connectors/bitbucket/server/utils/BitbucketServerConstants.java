@@ -9,7 +9,7 @@ public final class BitbucketServerConstants {
 
     public static final String BITBUCKET_PR_EMAIL_SUBJECT = "pr_email_subject";
 
-    public static final String BITBUCKET_PR_EMAIL_SUBJECT_REGEX = "(([a-zA-Z0-9]+)\\/([a-zA-Z0-9-]+) - Pull request #([0-9]+):[ ])";
+    public static final String BITBUCKET_PR_EMAIL_SUBJECT_REGEX = "(([~a-zA-Z0-9]+)\\/([a-zA-Z0-9-]+) - Pull request #([0-9]+):[ ])";
 
     // Authorization header for bitbucket server.
     public static final String AUTH_HEADER = "x-bitbucket-server-authorization";

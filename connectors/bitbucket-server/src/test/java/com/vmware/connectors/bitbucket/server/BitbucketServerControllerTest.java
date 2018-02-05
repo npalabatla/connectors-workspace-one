@@ -57,14 +57,25 @@ public class BitbucketServerControllerTest extends ControllerTestsBase {
     @Value("classpath:bitbucket/responses/pr_246.json")
     private Resource pr246;
 
+    @Value("classpath:bitbucket/responses/private-repo.json")
+    private Resource testRepoPr1;
+
     @Value("classpath:bitbucket/responses/approved.json")
     private Resource approve;
+
+    @Value("classpath:bitbucket/responses/private-repo-approved.json")
+    private Resource testRepoPr1Approved;
 
     @Value("classpath:bitbucket/responses/comments.json")
     private Resource comments;
 
+    @Value("classpath:bitbucket/responses/private-repo-comments.json")
+    private Resource testRepoPr1Comments;
+
     @Value("classpath:bitbucket/responses/declined.json")
     private Resource declined;
+
+    // TODO - private repo for: declined, merged, and activities
 
     @Value("classpath:bitbucket/responses/merged.json")
     private Resource merged;
@@ -106,6 +117,7 @@ public class BitbucketServerControllerTest extends ControllerTestsBase {
                 "UFO/app-platform-server - Pull request #245: ",
                 "UFO/app-platform-server - Pull request #241: ",
                 "UFO/app-platform-server - Pull request #239: ",
+                "~JBARD/test-repo - Pull request #1: ",
                 "UFO/card-connectors - Pull request #9: ");
 
         testRegex("pr_email_subject", fromFile("/regex/pr-email-subject.txt"), expectedList);
@@ -140,6 +152,19 @@ public class BitbucketServerControllerTest extends ControllerTestsBase {
         expect(notFoundUrl + "/activities").andRespond(withStatus(HttpStatus.NOT_FOUND));
 
         testCardRequests("request.json", "success.json");
+
+        this.mockBitbucketServer.verify();
+    }
+
+    @Test
+    public void testCardRequestsPersonalRepo() throws Exception {
+        final String pr1Url = "https://stash.air-watch.com/rest/api/1.0/users/JBARD/repos/test-repo/pull-requests/1";
+
+        expect(pr1Url).andRespond(withSuccess(testRepoPr1, APPLICATION_JSON));
+
+        expect(pr1Url + "/activities").andRespond(withSuccess(testRepoPr1Activities, APPLICATION_JSON));
+
+        testCardRequests("private-repo-request.json", "private-repo-success.json");
 
         this.mockBitbucketServer.verify();
     }

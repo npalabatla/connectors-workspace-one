@@ -8,37 +8,22 @@ package com.vmware.connectors.jira;
 import com.google.common.collect.ImmutableMap;
 import com.vmware.connectors.common.json.JsonDocument;
 import com.vmware.connectors.common.payloads.request.CardRequest;
-import com.vmware.connectors.common.payloads.response.Card;
-import com.vmware.connectors.common.payloads.response.CardAction;
-import com.vmware.connectors.common.payloads.response.CardActionInputField;
-import com.vmware.connectors.common.payloads.response.CardActionKey;
-import com.vmware.connectors.common.payloads.response.CardBody;
-import com.vmware.connectors.common.payloads.response.CardBodyField;
-import com.vmware.connectors.common.payloads.response.CardBodyFieldType;
-import com.vmware.connectors.common.payloads.response.Cards;
-import com.vmware.connectors.common.utils.Async;
+import com.vmware.connectors.common.payloads.response.*;
 import com.vmware.connectors.common.utils.CardTextAccessor;
-import com.vmware.connectors.common.utils.ObservableUtil;
+import com.vmware.connectors.common.utils.FluxUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.concurrent.ListenableFuture;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.AsyncRestOperations;
-import rx.Observable;
-import rx.Single;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import javax.validation.Valid;
 import java.util.Collections;
@@ -47,7 +32,6 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.springframework.http.HttpHeaders.AUTHORIZATION;
-import static org.springframework.http.HttpHeaders.CONTENT_TYPE;
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.MediaType.*;
 
@@ -63,17 +47,17 @@ public class JiraController {
 
     private static final int COMMENTS_SIZE = 2;
 
-    private final AsyncRestOperations rest;
+    private final WebClient rest;
     private final CardTextAccessor cardTextAccessor;
 
     @Autowired
-    public JiraController(AsyncRestOperations rest, CardTextAccessor cardTextAccessor) {
-        this.rest = rest;
+    public JiraController(WebClient.Builder clientBuilder, CardTextAccessor cardTextAccessor) {
+        rest = clientBuilder.build();
         this.cardTextAccessor = cardTextAccessor;
     }
 
     @PostMapping(path = "/cards/requests", produces = APPLICATION_JSON_VALUE, consumes = APPLICATION_JSON_VALUE)
-    public Single<ResponseEntity<Cards>> getCards(
+    public Mono<ResponseEntity<Cards>> getCards(
             @RequestHeader(name = JIRA_AUTH_HEADER) String jiraAuth,
             @RequestHeader(name = JIRA_BASE_URL_HEADER) String baseUrl,
             @RequestHeader(name = ROUTING_PREFIX) String routingPrefix,
@@ -82,92 +66,84 @@ public class JiraController {
         Set<String> issueIds = cardRequest.getTokens("issue_id");
         if (CollectionUtils.isEmpty(issueIds)) {
             logger.debug("Empty jira issues for Jira server: {}", baseUrl);
-            return Single.just(ResponseEntity.ok(new Cards()));
+            return Mono.just(ResponseEntity.ok(new Cards()));
         }
-        return Observable.from(issueIds)
+        return Flux.fromIterable(issueIds)
                 .flatMap(issueId -> getCardForIssue(jiraAuth, baseUrl, issueId, routingPrefix))
                 .collect(Cards::new, (cards, card) -> cards.getCards().add(card))
-                .map(ResponseEntity::ok)
-                .toSingle();
+                .map(ResponseEntity::ok);
     }
 
     @PostMapping(path = "/api/v1/issues/{issueKey}/comment", consumes = APPLICATION_FORM_URLENCODED_VALUE)
-    public Single<ResponseEntity<Void>> addComment(
+    public Mono<ResponseEntity<Void>> addComment(
             @RequestHeader(name = JIRA_AUTH_HEADER) String jiraAuth,
             @RequestHeader(name = JIRA_BASE_URL_HEADER) String baseUrl,
             @PathVariable String issueKey, @RequestParam String body) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(AUTHORIZATION, jiraAuth);
-        headers.set(CONTENT_TYPE, APPLICATION_JSON_VALUE);
         logger.debug("Adding jira comments for issue id : {} with Jira server: {}", issueKey, baseUrl);
-        ListenableFuture<ResponseEntity<String>> future = rest.exchange(
-                baseUrl + "/rest/api/2/issue/{issueKey}/comment", HttpMethod.POST,
-                new HttpEntity<>(Collections.singletonMap("body", body), headers), String.class,
-                issueKey);
-        return Async.toSingle(future)
-                .map(entity -> ResponseEntity.status(entity.getStatusCode()).build());
+        return rest.post()
+                .uri(baseUrl + "/rest/api/2/issue/{issueKey}/comment", issueKey)
+                .header(AUTHORIZATION, jiraAuth)
+                .contentType(APPLICATION_JSON)
+                .syncBody(body)
+                .exchange()
+                .map(response -> ResponseEntity.status(response.statusCode()).build());
     }
 
     @PostMapping(path = "/api/v1/issues/{issueKey}/watchers")
-    public Single<ResponseEntity<Void>> addWatcher(
+    public Mono<ResponseEntity<Void>> addWatcher(
             @RequestHeader(name = JIRA_AUTH_HEADER) String jiraAuth,
             @RequestHeader(name = JIRA_BASE_URL_HEADER) String baseUrl,
             @PathVariable String issueKey) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(AUTHORIZATION, jiraAuth);
-        headers.setContentType(APPLICATION_JSON);
         logger.debug("Adding the user to watcher list for jira issue id : {} with jira server : {}", issueKey, baseUrl);
-
-        ListenableFuture<ResponseEntity<JsonDocument>> selfFuture = rest.exchange(
-                baseUrl + "/rest/api/2/myself", GET,
-                new HttpEntity<>(headers), JsonDocument.class);
-
-        return Async.toSingle(selfFuture)
-                .flatMap(entity -> addUserToWatcher(entity.getBody(), headers, baseUrl, issueKey))
-                .map(entity -> ResponseEntity.status(entity.getStatusCode()).build());
+        return rest.get()
+                .uri(baseUrl + "/rest/api/2/myself")
+                .header(AUTHORIZATION, jiraAuth)
+                .retrieve()
+                .bodyToMono(JsonDocument.class)
+                .flatMap(body -> addUserToWatcher(body, jiraAuth, baseUrl, issueKey))
+                .map(status -> ResponseEntity.status(status).build());
     }
 
     @GetMapping("/test-auth")
-    public Single<ResponseEntity<Void>> verifyAuth(@RequestHeader(name = JIRA_AUTH_HEADER) String jiraAuth,
+    public Mono<ResponseEntity<Void>> verifyAuth(@RequestHeader(name = JIRA_AUTH_HEADER) String jiraAuth,
                                                    @RequestHeader(name = JIRA_BASE_URL_HEADER) String baseUrl) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(AUTHORIZATION, jiraAuth);
-
-        return Async.toSingle(rest.exchange(baseUrl + "/rest/api/2/myself", HttpMethod.HEAD, new HttpEntity<>(headers), Void.class))
+        return rest.head()
+                .uri(baseUrl + "/rest/api/2/myself")
+                .header(AUTHORIZATION, jiraAuth)
+                .exchange()
                 .map(ignored -> ResponseEntity.noContent().build());
     }
 
-    private Single<ResponseEntity<Void>> addUserToWatcher(JsonDocument jiraUserDetails, HttpHeaders headers,
-                                                          String baseUrl, String issueKey) {
+    private Mono<HttpStatus> addUserToWatcher(JsonDocument jiraUserDetails, String jiraAuth,
+                                                              String baseUrl, String issueKey) {
         String user = jiraUserDetails.read("$.name");
-        ListenableFuture<ResponseEntity<String>> addWatcherFuture = rest.exchange(
-                baseUrl + "/rest/api/2/issue/{issueKey}/watchers", HttpMethod.POST,
-                new HttpEntity<>(String.format("\"%s\"", user), headers), String.class,
-                issueKey);
-        return Async.toSingle(addWatcherFuture)
-                .map(entity -> ResponseEntity.status(entity.getStatusCode()).build());
-
+        return rest.post()
+                .uri(baseUrl + "/rest/api/2/issue/{issueKey}/watchers", issueKey)
+                .header(AUTHORIZATION, jiraAuth)
+                .contentType(APPLICATION_JSON)
+                .syncBody(String.format("\"%s\"", user))
+                .exchange()
+                .map(ClientResponse::statusCode);
     }
 
-    private Observable<Card> getCardForIssue(String jiraAuth, String baseUrl, String issueId, String routingPrefix) {
-        return getIssue(jiraAuth, baseUrl, issueId).toObservable()
+    private Flux<Card> getCardForIssue(String jiraAuth, String baseUrl, String issueId, String routingPrefix) {
+        return Flux.from(getIssue(jiraAuth, baseUrl, issueId))
                 // if an issue is not found, we'll just not bother creating a card
-                .onErrorResumeNext(ObservableUtil::skip404)
-                .map(entity -> transformIssueResponse(entity, baseUrl, issueId, routingPrefix));
+                .onErrorResume(FluxUtil::skip404)
+                .map(jiraResponse -> transformIssueResponse(jiraResponse, baseUrl, issueId, routingPrefix));
 
     }
 
-    private Single<ResponseEntity<JsonDocument>> getIssue(String jiraAuth, String baseUrl, String issueId) {
+    private Mono<JsonDocument> getIssue(String jiraAuth, String baseUrl, String issueId) {
         logger.debug("Getting info for Jira id: {} with Jira server: {}", issueId, baseUrl);
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(AUTHORIZATION, jiraAuth);
-        ListenableFuture<ResponseEntity<JsonDocument>> future = rest.exchange(
-                baseUrl + "/rest/api/2/issue/{issueId}", GET, new HttpEntity<String>(headers), JsonDocument.class, issueId);
-        return Async.toSingle(future);
+        return rest.get()
+                .uri(baseUrl + "/rest/api/2/issue/{issueId}", issueId)
+                .header(AUTHORIZATION, jiraAuth)
+                .retrieve()
+                .bodyToMono(JsonDocument.class);
     }
 
-    private Card transformIssueResponse(ResponseEntity<JsonDocument> result, String baseUrl, String issueId, String routingPrefix) {
-        JsonDocument jiraResponse = result.getBody();
+    private Card transformIssueResponse(JsonDocument jiraResponse, String baseUrl, String issueId, String routingPrefix) {
         String issueKey = jiraResponse.read("$.key");
         String summary = jiraResponse.read("$.fields.summary");
         List<String> fixVersions = jiraResponse.read("$.fields.fixVersions[*].name");

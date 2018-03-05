@@ -6,6 +6,7 @@
 package com.vmware.connectors.common.config;
 
 import com.vmware.connectors.common.context.ContextInterceptor;
+import com.vmware.connectors.common.json.JsonDocumentDecoder;
 import com.vmware.connectors.common.json.JsonDocumentHttpMessageConverter;
 import com.vmware.connectors.common.utils.CardTextAccessor;
 import com.vmware.connectors.common.web.ConnectorRootController;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.JwtAccessTokenConverterRestTemplateCustomizer;
 import org.springframework.boot.autoconfigure.web.servlet.ServletWebServerFactoryAutoConfiguration;
+import org.springframework.boot.web.codec.CodecCustomizer;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.MimeMappings;
 import org.springframework.boot.web.servlet.server.ConfigurableServletWebServerFactory;
@@ -236,5 +238,10 @@ public class ConnectorsAutoConfiguration {
     @Bean
     public IdleConnectionsEvictor idleConnectionsEvictor(NHttpClientConnectionManager connMgr) {
         return new IdleConnectionsEvictor(connMgr);
+    }
+
+    @Bean
+    public CodecCustomizer codecCustomizer() {
+        return configurer -> configurer.customCodecs().decoder(new JsonDocumentDecoder());
     }
 }

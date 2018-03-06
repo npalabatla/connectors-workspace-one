@@ -6,37 +6,53 @@
 package com.vmware.connectors.jira;
 
 import com.google.common.collect.ImmutableList;
+import com.vmware.connectors.mock.MockRestServiceServer;
+import com.vmware.connectors.mock.RequestHandler;
+import com.vmware.connectors.mock.RequestHandlerHolder;
 import com.vmware.connectors.test.ControllerTestsBase;
 import com.vmware.connectors.test.JsonReplacementsBuilder;
+import org.apache.commons.io.IOUtils;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.web.reactive.function.client.WebClientCodecCustomizer;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.Resource;
-import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.client.reactive.ClientHttpConnector;
+import org.springframework.http.client.reactive.ClientHttpRequest;
+import org.springframework.http.client.reactive.ClientHttpResponse;
+import org.springframework.mock.http.client.reactive.MockClientHttpRequest;
+import org.springframework.mock.http.client.reactive.MockClientHttpResponse;
 import org.springframework.test.web.client.ResponseActions;
 import org.springframework.test.web.client.match.MockRestRequestMatchers;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.client.AsyncRestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
 import java.util.List;
+import java.util.function.Function;
 
 import static com.vmware.connectors.test.JsonSchemaValidator.isValidHeroCardConnectorResponse;
 import static org.hamcrest.CoreMatchers.any;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.springframework.http.HttpHeaders.*;
-import static org.springframework.http.HttpMethod.GET;
-import static org.springframework.http.HttpMethod.HEAD;
-import static org.springframework.http.HttpMethod.POST;
+import static org.springframework.http.HttpMethod.*;
 import static org.springframework.http.HttpStatus.*;
 import static org.springframework.http.MediaType.*;
 import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -53,6 +69,53 @@ public class JiraControllerTests extends ControllerTestsBase {
     @Value("classpath:jira/responses/myself.json")
     private Resource myself;
 
+    @TestConfiguration
+    static class ControllerTestConfiguration {
+        @Bean
+        public RequestHandlerHolder requestHandler() {
+            return new RequestHandlerHolder();
+        }
+
+        @Bean
+        public WebClient.Builder webClientBuilder(WebClientCodecCustomizer codecCustomizer, RequestHandler requestHandler) {
+            WebClient.Builder builder = WebClient.builder();
+            codecCustomizer.customize(builder);
+            builder.clientConnector(new ClientHttpConnector() {
+                @Override
+                public Mono<ClientHttpResponse> connect(HttpMethod method, URI uri, Function<? super ClientHttpRequest, Mono<Void>> requestCallback) {
+                    try {
+                        MockClientHttpRequest clientHttpRequest = new MockClientHttpRequest(method, uri);
+                        requestCallback.apply(clientHttpRequest).block();
+                        InputStream body = clientHttpRequest.getBody()
+                                .reduce((b1, b2) -> b2.write(b1))
+                                .map(DataBuffer::asInputStream)
+                                .block();
+                        org.springframework.mock.http.client.MockClientHttpRequest request = new org.springframework.mock.http.client.MockClientHttpRequest();
+                        request.setMethod(method);
+                        request.setURI(uri);
+                        request.getHeaders().addAll(clientHttpRequest.getHeaders());
+                        if (body != null) {
+                            IOUtils.copy(body, request.getBody());
+                        }
+                        org.springframework.http.client.ClientHttpResponse response = requestHandler.handle(request);
+                        MockClientHttpResponse mockClientHttpResponse = new MockClientHttpResponse(response.getStatusCode());
+                        mockClientHttpResponse.getHeaders().addAll(response.getHeaders());
+                        DataBuffer bodyBuffer = new DefaultDataBufferFactory().allocateBuffer();
+                        IOUtils.copy(response.getBody(), bodyBuffer.asOutputStream());
+                        mockClientHttpResponse.setBody(Mono.just(bodyBuffer));
+                        return Mono.just(mockClientHttpResponse);
+                    } catch (IOException e) {
+                        throw new AssertionError(e);
+                    }
+                }
+            });
+            return builder;
+        }
+    }
+
+    @Autowired
+    private RequestHandlerHolder requestHandlerHolder;
+
     @Autowired
     private AsyncRestTemplate rest;
 
@@ -61,7 +124,7 @@ public class JiraControllerTests extends ControllerTestsBase {
     @Before
     public void setup() throws Exception {
         super.setup();
-        mockJira = MockRestServiceServer.bindTo(rest).ignoreExpectOrder(true).build();
+        mockJira = MockRestServiceServer.bindTo(requestHandlerHolder).ignoreExpectOrder(true).build();
     }
 
     @Test

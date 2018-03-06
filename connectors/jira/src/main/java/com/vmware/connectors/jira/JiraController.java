@@ -33,6 +33,7 @@ import java.util.Set;
 
 import static org.springframework.http.HttpHeaders.AUTHORIZATION;
 import static org.springframework.http.HttpMethod.GET;
+import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.http.MediaType.*;
 
 /**
@@ -51,8 +52,8 @@ public class JiraController {
     private final CardTextAccessor cardTextAccessor;
 
     @Autowired
-    public JiraController(WebClient.Builder clientBuilder, CardTextAccessor cardTextAccessor) {
-        rest = clientBuilder.build();
+    public JiraController(WebClient rest, CardTextAccessor cardTextAccessor) {
+        this.rest = rest;
         this.cardTextAccessor = cardTextAccessor;
     }
 
@@ -84,9 +85,10 @@ public class JiraController {
                 .uri(baseUrl + "/rest/api/2/issue/{issueKey}/comment", issueKey)
                 .header(AUTHORIZATION, jiraAuth)
                 .contentType(APPLICATION_JSON)
-                .syncBody(body)
-                .exchange()
-                .map(response -> ResponseEntity.status(response.statusCode()).build());
+                .syncBody(Collections.singletonMap("body", body))
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(response -> ResponseEntity.status(CREATED).build());
     }
 
     @PostMapping(path = "/api/v1/issues/{issueKey}/watchers")
@@ -110,7 +112,8 @@ public class JiraController {
         return rest.head()
                 .uri(baseUrl + "/rest/api/2/myself")
                 .header(AUTHORIZATION, jiraAuth)
-                .exchange()
+                .retrieve()
+                .bodyToMono(String.class)
                 .map(ignored -> ResponseEntity.noContent().build());
     }
 

@@ -49,6 +49,7 @@ import org.springframework.web.client.AsyncRestOperations;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
+import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -238,6 +239,11 @@ public class ConnectorsAutoConfiguration {
     @Bean
     public IdleConnectionsEvictor idleConnectionsEvictor(NHttpClientConnectionManager connMgr) {
         return new IdleConnectionsEvictor(connMgr);
+    }
+
+    @Bean
+    public WebClient webClient(WebClient.Builder builder) {
+        return builder.build();
     }
 
     @Bean

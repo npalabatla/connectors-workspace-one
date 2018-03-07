@@ -15,12 +15,9 @@ import org.springframework.hateoas.ResourceSupport;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriComponentsBuilder;
-
-import javax.servlet.http.HttpServletRequest;
 
 import java.util.concurrent.TimeUnit;
 
@@ -44,8 +41,7 @@ public class ConnectorRootController {
     }
 
     @GetMapping(path = "/", produces = MediaTypes.HAL_JSON_VALUE)
-    public ResponseEntity<ResourceSupport> getRoot(HttpServletRequest servletRequest) {
-        HttpRequest request = new ServletServerHttpRequest(servletRequest);
+    public ResponseEntity<ResourceSupport> getRoot(HttpRequest request) {
         ResourceSupport resource = new ResourceSupport();
 
         addMetadata(resource, request);

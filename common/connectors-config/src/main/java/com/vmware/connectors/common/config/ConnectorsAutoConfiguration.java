@@ -11,8 +11,6 @@ import com.vmware.connectors.common.json.JsonDocumentHttpMessageConverter;
 import com.vmware.connectors.common.utils.CardTextAccessor;
 import com.vmware.connectors.common.web.ConnectorRootController;
 import com.vmware.connectors.common.web.ExceptionHandlers;
-import com.vmware.connectors.common.web.MdcFilter;
-import com.vmware.connectors.common.web.SingleReturnValueHandler;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -28,9 +26,6 @@ import org.springframework.boot.autoconfigure.security.oauth2.resource.JwtAccess
 import org.springframework.boot.autoconfigure.security.oauth2.resource.JwtAccessTokenConverterRestTemplateCustomizer;
 import org.springframework.boot.autoconfigure.web.servlet.ServletWebServerFactoryAutoConfiguration;
 import org.springframework.boot.web.codec.CodecCustomizer;
-import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
-import org.springframework.boot.web.server.MimeMappings;
-import org.springframework.boot.web.servlet.server.ConfigurableServletWebServerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -49,16 +44,13 @@ import org.springframework.security.oauth2.config.annotation.web.configurers.Res
 import org.springframework.web.client.AsyncRestOperations;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-import javax.servlet.Filter;
 import java.io.IOException;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -73,35 +65,16 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 @Import({ExceptionHandlers.class, ConnectorRootController.class})
 public class ConnectorsAutoConfiguration {
 
-    @Bean
-    public SingleReturnValueHandler singleReturnValueHandler() {
-        return new SingleReturnValueHandler();
-    }
 
-    @Bean
-    public WebMvcConfigurer observableMVCConfiguration(final SingleReturnValueHandler singleReturnValueHandler) {
-        return new WebMvcConfigurer() {
-            @Override
-            public void addReturnValueHandlers(List<HandlerMethodReturnValueHandler> returnValueHandlers) {
-                returnValueHandlers.add(singleReturnValueHandler);
-            }
-        };
-    }
-
-    @Bean
-    public ConfigurableServletWebServerFactory webServerFactory() {
-        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
-        MimeMappings mappings = new MimeMappings(MimeMappings.DEFAULT);
-        mappings.add("hbs", "text/x-handlebars-template");
-        mappings.add("hal", "application/hal+json");
-        factory.setMimeMappings(mappings);
-        return factory;
-    }
-
-    @Bean
-    public Filter mdcFilter() {
-        return new MdcFilter();
-    }
+//    @Bean
+//    public ConfigurableServletWebServerFactory webServerFactory() {
+//        TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
+//        MimeMappings mappings = new MimeMappings(MimeMappings.DEFAULT);
+//        mappings.add("hbs", "text/x-handlebars-template");
+//        mappings.add("hal", "application/hal+json");
+//        factory.setMimeMappings(mappings);
+//        return factory;
+//    }
 
 
     @Bean
@@ -191,6 +164,7 @@ public class ConnectorsAutoConfiguration {
             public void configure(HttpSecurity http) throws Exception {
                 http.anonymous()
                         .and()
+                        .csrf().disable()
                         .authorizeRequests()
                         .antMatchers(HttpMethod.GET, "/health", "/templates/**", "/discovery/**", "/images/**", "/").permitAll()
                         .and()

@@ -24,6 +24,7 @@ import org.apache.http.nio.conn.NHttpClientConnectionManager;
 import org.apache.http.nio.reactor.IOReactorException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.security.oauth2.resource.JwtAccessTokenConverterConfigurer;
 import org.springframework.boot.autoconfigure.security.oauth2.resource.JwtAccessTokenConverterRestTemplateCustomizer;
 import org.springframework.boot.autoconfigure.web.servlet.ServletWebServerFactoryAutoConfiguration;
 import org.springframework.boot.web.codec.CodecCustomizer;
@@ -126,6 +127,11 @@ public class ConnectorsAutoConfiguration {
                 });
             }
         };
+    }
+
+    @Bean
+    public JwtAccessTokenConverterConfigurer jwtAccessTokenConverterConfigurer () {
+        return new JwtConverter();
     }
 
     /*
